@@ -8,9 +8,7 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "dist:win": "electron-builder --win --x64",
-    "dist:mac": "electron-builder --mac --universal",
-    "dist:all": "electron-builder --win --x64 --mac --universal"
+   "dist:win": "electron-builder --win --x64 --publish=never", "dist:mac": "electron-builder --mac --universal --publish=never", "dist:all": "electron-builder --win --x64 --mac --universal --publish=never"
   },
   "dependencies": {
     "ws": "^8.21.0"
