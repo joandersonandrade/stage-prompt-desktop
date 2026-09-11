@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, shell, dialog } = require("electron");
+const { app, BrowserWindow, Menu, shell, dialog, session } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 
@@ -61,6 +61,14 @@ if (!gotLock) {
 
   app.whenReady().then(async () => {
     Menu.setApplicationMenu(null);
+
+    // Por padrão o Electron NEGA pedidos de permissão do navegador (câmera,
+    // microfone, MIDI...). O control.html usa Web MIDI para escutar o
+    // Logic Pro/DAW via IAC Driver, então precisamos liberar isso aqui.
+    session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+      callback(permission === "midi" || permission === "midiSysex" || permission === "microphone");
+    });
+
     try {
       await startLocalHub();
     } catch (error) {
