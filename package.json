@@ -1,0 +1,58 @@
+{
+  "name": "stage-prompt-central-local",
+  "productName": "Stage Prompt - Central Local",
+  "version": "1.0.0",
+  "description": "Central local do Stage Prompt (funciona sem internet) — por Joanderson Andrade",
+  "author": "Joanderson Andrade",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "electron-builder --win --x64",
+    "dist:mac": "electron-builder --mac --universal",
+    "dist:all": "electron-builder --win --x64 --mac --universal"
+  },
+  "dependencies": {
+    "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "electron": "^32.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "app.stageprompt.centrallocal",
+    "productName": "Stage Prompt - Central Local",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "local-hub/**/*",
+      "build/icon.png",
+      "!local-hub/stage-hub-state.json"
+    ],
+    "asarUnpack": [
+      "local-hub/**/*"
+    ],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "mac": {
+      "target": [{ "target": "dmg", "arch": ["universal"] }],
+      "icon": "build/icon.icns",
+      "category": "public.app-category.utilities",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "dmg": {
+      "title": "Stage Prompt - Central Local"
+    }
+  }
+}

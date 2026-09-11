@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Stage Prompt — Central local</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <main class="shell entry-shell">
+    <header class="brandbar">
+      <div><span class="brand-mark">SP</span><strong>STAGE PROMPT</strong><small class="credit">por Joanderson Andrade</small></div>
+      <span class="status on">CENTRAL LOCAL</span>
+    </header>
+
+
+    <div class="entry-grid">
+      <section class="panel">
+        <h2>Entrar em uma sala</h2>
+        <label>Código da sala ou PIN<input id="joinRoom" inputmode="text" autocomplete="off" placeholder="Ex.: PALCO ou 424242" /></label>
+        <label>Seu nome<input id="joinName" autocomplete="name" placeholder="Como a equipe verá você" /></label>
+        <label>Função<input id="joinRole" placeholder="Ex.: Vocal, luz, produção" /></label>
+        <div class="role-picker" role="group" aria-label="Tipo de acesso">
+          <button class="role active" data-role="crew" type="button">Equipe</button>
+          <button class="role" data-role="control" type="button">Administrar</button>
+          <button class="role" data-role="direcao" type="button">Direção musical</button>
+          <button class="role" data-role="display" type="button">Telão</button>
+        </div>
+        <label id="adminWrap" hidden>Código administrativo<input id="joinAdmin" autocomplete="off" placeholder="Código de 8 caracteres" /></label>
+        <button id="enter" class="primary wide" type="button">Entrar</button>
+        <p id="joinError" class="error" role="alert"></p>
+      </section>
+
+      <section class="panel create-panel">
+        <p class="eyebrow">Administrador</p>
+        <h2>Criar sala local</h2>
+        <label>Nome ou código da sala<input id="createRoom" autocomplete="off" placeholder="Ex.: FESTA2026" /></label>
+        <button id="create" class="accent wide" type="button">Criar e abrir painel</button>
+        <p class="hint">A central gera um PIN simples para a equipe e um código separado para quem pode administrar.</p>
+        <p id="createError" class="error" role="alert"></p>
+      </section>
+    </div>
+    <section class="panel hosts-panel">
+      <p class="eyebrow">Endereços desta central (detectados automaticamente)</p>
+      <div id="hosts" class="hosts">Procurando…</div>
+    </section>
+    <footer class="site-footer">Sistema desenvolvido por <strong>Joanderson Andrade</strong></footer>
+  </main>
+  <script type="module">
+    import { adminCode, cleanRoom, setRoom } from "/hub.js";
+    const $ = (id) => document.getElementById(id);
+    fetch("/api/hosts").then((r) => r.json()).then((data) => {
+      const list = data.urls ?? [];
+      const secure = data.secureUrls ?? [];
+      $("hosts").innerHTML = list.length
+        ? list.map((url) => `<a href="${url}">${url}</a>`).join("")
+          + (secure.length
+            ? `<p class="hint">Para voz ao vivo (microfone) no celular, use o endereço seguro e aceite o aviso de certificado:</p>`
+              + secure.map((url) => `<a href="${url}">${url}</a>`).join("")
+            : "")
+        : "Conecte esta máquina ao Wi-Fi do evento.";
+    }).catch(() => { $("hosts").textContent = "Não foi possível detectar o IP."; });
+    let role = "crew";
+    document.querySelectorAll(".role").forEach((button) => button.addEventListener("click", () => {
+      role = button.dataset.role;
+      document.querySelectorAll(".role").forEach((item) => item.classList.toggle("active", item === button));
+      $("adminWrap").hidden = role !== "control";
+    }));
+    $("create").onclick = async () => {
+      const room = cleanRoom($("createRoom").value);
+      if (room.length < 3) { $("createError").textContent = "Use pelo menos 3 letras ou números."; return; }
+      const generated = adminCode();
+      const response = await fetch("/api/room", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ room, adminCode: generated }) });
+      const data = await response.json();
+      if (!response.ok) { $("createError").textContent = data.error || "Não foi possível criar."; return; }
+      setRoom(room);
+      location.href = `/control?sala=${encodeURIComponent(room)}&admin=${encodeURIComponent(generated)}`;
+    };
+    $("enter").onclick = async () => {
+      const typedRoom = $("joinRoom").value.trim().toUpperCase();
+      const name = $("joinName").value.trim();
+      const functionName = $("joinRole").value.trim();
+      if (typedRoom.length < 3) { $("joinError").textContent = "Código ou PIN inválido."; return; }
+      if (role === "crew" && !name) { $("joinError").textContent = "Digite seu nome para entrar na equipe."; return; }
+      const lookup = await fetch(`/api/room?sala=${encodeURIComponent(typedRoom)}`).then((r) => r.json()).catch(() => ({ ok: false }));
+      if (!lookup.ok) { $("joinError").textContent = "Sala não encontrada nesta central."; return; }
+      const room = lookup.room;
+      if (role === "control") {
+        const admin = $("joinAdmin").value.trim().toUpperCase();
+        const response = await fetch(`/api/room?sala=${encodeURIComponent(room)}&admin=${encodeURIComponent(admin)}`);
+        const data = await response.json();
+        if (!data.authorized) { $("joinError").textContent = "Código administrativo incorreto."; return; }
+        location.href = `/control?sala=${encodeURIComponent(room)}&admin=${encodeURIComponent(admin)}`;
+        return;
+      }
+      setRoom(room);
+      if (role === "direcao") {
+        if (!name) { $("joinError").textContent = "Digite seu nome para entrar como direção musical."; return; }
+        localStorage.setItem(`hub:profile:${room}`, JSON.stringify({ name, role: functionName || "Direção musical" }));
+        location.href = `/direcao?sala=${encodeURIComponent(room)}`;
+        return;
+      }
+      if (role === "display") { location.href = `/display?sala=${encodeURIComponent(room)}`; return; }
+      localStorage.setItem(`hub:profile:${room}`, JSON.stringify({ name, role: functionName }));
+      location.href = `/crew?sala=${encodeURIComponent(room)}`;
+    };
+  </script>
+</body>
+</html>

@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Rádio da equipe — offline</title>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<main>
+  <div class="row" style="justify-content:space-between">
+    <h1>Rádio da equipe</h1><span class="member online" id="roomTag">Sala</span>
+    <a class="sair-sala" href="/" style="margin-left:auto;margin-right:10px;font-size:12px;color:#9aa3b2;text-decoration:none">Sair da sala</a><span class="status"><span class="dot" id="dot"></span><span id="state">conectando</span></span>
+  </div>
+  <div class="card">
+    <div class="row">
+      <input id="name" placeholder="Seu nome" style="flex:1" maxlength="40" />
+      <input id="role" placeholder="Sua função" style="flex:1" maxlength="40" />
+      <select id="target" style="flex:1"><option value="">Toda a equipe</option></select>
+    </div>
+    <p class="hint">Online agora</p>
+    <div class="member-list" id="members"></div>
+  </div>
+  <div class="card voice-card">
+    <div class="row spread"><div><h2>Voz ao vivo</h2><p class="hint" id="voiceState">Microfone desligado</p></div><button id="voiceJoin" class="accent">Ligar rádio</button></div>
+    <div class="mode-grid" role="group" aria-label="Modo do microfone">
+      <button class="mode active" data-mode="ptt">Apertar</button><button class="mode" data-mode="toggle">Liga/desliga</button><button class="mode" data-mode="open">Aberto</button><button class="mode" data-mode="vox">Por voz</button><button class="mode" data-mode="mute">Mudo</button>
+    </div>
+    <button id="talk" class="talk" type="button" disabled>Segure para falar</button>
+    <label class="switch-row"><input id="gate" type="checkbox" checked /> Antirruído e corte de ruído</label>
+    <p class="hint">A voz usa o destinatário selecionado acima: toda a equipe ou uma pessoa.</p>
+    <p class="hint" id="secureHint" hidden></p>
+    <button id="secureSwitch" class="accent" hidden style="width:100%">🔒 Abrir modo seguro (microfone no celular)</button>
+  </div>
+  <div class="card">
+    <h2>Tempo do palco</h2>
+    <div class="big" id="clock">--:--</div>
+  </div>
+  <div class="card">
+    <h2>Recados</h2>
+    <div class="row" id="tabs" style="overflow-x:auto;gap:6px"></div>
+    <div class="row spread" style="margin:6px 0">
+      <span class="hint" id="threadHint">Canal aberto: todos da sala veem</span>
+      <button id="clear" class="ghost" style="font-size:11px">Limpar</button>
+    </div>
+    <div class="list" id="list"></div>
+    <div class="row" style="margin-top:10px">
+      <input id="text" placeholder="Escreva um recado" style="flex:1" />
+      <button class="primary" id="send">Enviar</button>
+      <button id="rec">🎙️ Áudio</button>
+       <input id="audioFile" type="file" accept="audio/*,.m4a,.mp3,.wav,.aac,.ogg,.caf" hidden />
+    </div>
+  </div>
+
+</main>
+<nav class="appnav"><a data-nav="painel" href="/control.html" class="">Painel</a><a data-nav="direcao" href="/direcao.html" class="">Direção</a><a data-nav="equipe" href="/crew.html" class="active">Equipe</a><a data-nav="telao" href="/display.html" target="_blank" class="">Telão</a></nav>
+
+<script type="module">
+  import { connect, roomFromUrl, formatClock, timerMs, uid } from "/hub.js";
+  import { createVoice } from "/voice.js";
+  const room = roomFromUrl();
+  document.getElementById("roomTag").textContent = `Sala ${room}`;
+  const nameEl = document.getElementById("name");
+  const savedProfile = JSON.parse(localStorage.getItem(`hub:profile:${room}`) || "{}");
+  nameEl.value = savedProfile.name || localStorage.getItem("hub:nome") || "";
+  const roleEl = document.getElementById("role");
+  roleEl.value = savedProfile.role || "";
+  const memberId = localStorage.getItem("hub:membro-id") || uid();
+  localStorage.setItem("hub:membro-id", memberId);
+  const list = document.getElementById("list");
+  const targetEl = document.getElementById("target");
+  const membersEl = document.getElementById("members");
+  let voiceJoined = false;
+  let voiceMode = "ptt";
+  const voice = createVoice({
+    room, selfId: memberId, getName: () => identity().name, getTargetId: () => targetEl.value || null,
+    onState: (s) => {
+      voiceJoined = s.joined;
+      document.getElementById("voiceJoin").textContent = s.joined ? "Desligar rádio" : "Ligar rádio";
+      document.getElementById("voiceState").textContent = !s.joined ? "Microfone desligado" : s.talking || s.ptt || s.mode === "open" ? "Transmitindo agora" : `${s.peers.length} pessoa(s) no canal`;
+      document.getElementById("talk").classList.toggle("live", Boolean(s.talking || s.ptt || s.mode === "open"));
+    },
+  });
+
+
+  const status = (s) => {
+    document.getElementById("state").textContent = s === "connected" ? "no canal (local)" : "reconectando";
+    document.getElementById("dot").classList.toggle("on", s === "connected");
+  };
+
+  const identity = () => ({ id: memberId, name: (nameEl.value || "Equipe").trim(), role: roleEl.value.trim() });
+  const crew = connect(room, "crew", (m) => {
+    if (m?.kind === "presence") renderMembers(m.members || []);
+    else addMessage(m);
+  }, status, identity());
+  nameEl.addEventListener("input", () => {
+    localStorage.setItem("hub:nome", nameEl.value);
+    localStorage.setItem(`hub:profile:${room}`, JSON.stringify({ name: nameEl.value, role: roleEl.value }));
+    crew.identify(identity());
+    voice.identify(identity().name);
+  });
+  roleEl.addEventListener("input", () => {
+    localStorage.setItem(`hub:profile:${room}`, JSON.stringify({ name: nameEl.value, role: roleEl.value }));
+    crew.identify(identity());
+  });
+  targetEl.addEventListener("change", () => voice.retarget());
+
+  // No celular o microfone só funciona em endereço seguro (https). Oferece a troca de porta.
+  const secureSwitch = document.getElementById("secureSwitch");
+  const secureHint = document.getElementById("secureHint");
+  if (!window.isSecureContext) {
+    fetch("/api/hosts").then((r) => r.json()).then((data) => {
+      const url = `https://${location.hostname}:${data.securePort || 8788}${location.pathname}${location.search}`;
+      secureHint.textContent = "Este endereço não libera o microfone no celular. Toque abaixo e aceite o aviso do certificado (Avançado → Continuar).";
+      secureHint.hidden = false;
+      secureSwitch.hidden = false;
+      secureSwitch.addEventListener("click", () => location.assign(url));
+    }).catch(() => {});
+  }
+
+  document.getElementById("voiceJoin").addEventListener("click", async () => {
+    if (voiceJoined) { voice.leave(); return; }
+    const error = await voice.join();
+    if (error) {
+      document.getElementById("voiceState").textContent = error;
+      if (!window.isSecureContext) { secureHint.hidden = false; secureSwitch.hidden = false; }
+      return;
+    }
+    voice.setMode(voiceMode);
+    document.getElementById("talk").disabled = false;
+  });
+  document.querySelectorAll(".mode").forEach((button) => button.addEventListener("click", () => {
+    voiceMode = button.dataset.mode;
+    document.querySelectorAll(".mode").forEach((item) => item.classList.toggle("active", item === button));
+    document.getElementById("talk").textContent = voiceMode === "toggle" ? "Toque para falar" : voiceMode === "ptt" ? "Segure para falar" : voiceMode === "mute" ? "Microfone no mudo" : voiceMode === "open" ? "Microfone aberto" : "Ativação por voz";
+    voice.setMode(voiceMode);
+  }));
+  const talk = document.getElementById("talk");
+  talk.addEventListener("pointerdown", (event) => { event.preventDefault(); if (voiceMode === "ptt") voice.pressPtt(); });
+  for (const type of ["pointerup", "pointercancel", "pointerleave"]) talk.addEventListener(type, () => { if (voiceMode === "ptt") voice.releasePtt(); });
+  talk.addEventListener("click", () => { if (voiceMode === "toggle") voice.toggleTalk(); });
+  document.getElementById("gate").addEventListener("change", (event) => voice.setGate(event.target.checked));
+  window.addEventListener("pagehide", () => voice.leave());
+
+  // Histórico só desta sessão: ao fechar/sair a conversa não volta.
+  const sessionKey = `hub:sessao:${room}`;
+  let sessionStart = Number(sessionStorage.getItem(sessionKey) || 0);
+  if (!sessionStart) { sessionStart = Date.now(); sessionStorage.setItem(sessionKey, String(sessionStart)); }
+
+  const allMessages = [];
+  const seen = new Set();
+  const unread = {};
+  let knownMembers = [];
+
+  const threadOf = (m) => (m.targetId ? (m.senderId === memberId ? m.targetId : m.senderId) : "");
+  const currentThread = () => targetEl.value || "";
+  const nameOf = (id) => knownMembers.find((m) => m.id === id)?.name || "Privado";
+
+  function renderMembers(members) {
+    const selected = targetEl.value;
+    const unique = [...new Map(members.map((member) => [member.id, member])).values()];
+    knownMembers = unique;
+    membersEl.innerHTML = "";
+    targetEl.innerHTML = '<option value="">Toda a equipe</option>';
+    unique.forEach((member) => {
+      const badge = document.createElement("span");
+      badge.className = "member online";
+      badge.textContent = `${member.name}${member.role ? ` · ${member.role}` : ""}${member.id === memberId ? " (você)" : ""}`;
+      membersEl.append(badge);
+      if (member.id !== memberId) {
+        const option = document.createElement("option");
+        option.value = member.id;
+        option.textContent = `Privado · ${member.name}`;
+        targetEl.append(option);
+      }
+    });
+    if ([...targetEl.options].some((option) => option.value === selected)) targetEl.value = selected;
+    renderTabs();
+  }
+
+  const tabsEl = document.getElementById("tabs");
+  function renderTabs() {
+    const ids = new Set(allMessages.map(threadOf).filter(Boolean));
+    knownMembers.forEach((m) => { if (m.id !== memberId) ids.add(m.id); });
+    tabsEl.innerHTML = "";
+    const make = (id, label) => {
+      const button = document.createElement("button");
+      const count = unread[id] || 0;
+      button.textContent = count ? `${label} (${count})` : label;
+      button.className = currentThread() === id ? "primary" : "";
+      button.style.flex = "0 0 auto";
+      button.addEventListener("click", () => openThread(id));
+      tabsEl.append(button);
+    };
+    make("", "# Toda a equipe");
+    [...ids].forEach((id) => make(id, `🔒 ${nameOf(id)}`));
+  }
+
+  function openThread(id) {
+    targetEl.value = id;
+    unread[id] = 0;
+    voice.retarget();
+    renderList();
+  }
+  targetEl.addEventListener("change", () => { unread[currentThread()] = 0; renderList(); });
+
+  function renderList() {
+    const me = (nameEl.value || "").trim();
+    const thread = currentThread();
+    document.getElementById("threadHint").textContent = thread
+      ? `🔒 Conversa privada com ${nameOf(thread)} — só vocês dois veem`
+      : "Canal aberto: todos da sala veem";
+    list.innerHTML = "";
+    allMessages.filter((m) => threadOf(m) === thread).forEach((m) => {
+      const div = document.createElement("div");
+      div.className = "msg" + (m.senderId === memberId ? " me" : "");
+      const head = document.createElement("small");
+      head.textContent = `${m.sender}${m.targetId ? " · privado" : ""} · ${new Date(m.at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+      div.append(head);
+      if (m.audio) {
+        const audio = document.createElement("audio");
+        audio.controls = true; audio.src = m.audio; audio.style.width = "100%";
+        div.append(audio);
+      } else {
+        div.append(document.createTextNode(m.text || ""));
+      }
+      list.append(div);
+    });
+    list.scrollTop = list.scrollHeight;
+    renderTabs();
+  }
+
+  if ("Notification" in window && Notification.permission === "default") {
+    Notification.requestPermission().catch(() => {});
+  }
+  let beepContext = null;
+  function alertNew(m) {
+    navigator.vibrate?.(m.audio ? [200, 80, 200] : [150, 60, 150]);
+    try {
+      beepContext = beepContext || new (window.AudioContext || window.webkitAudioContext)();
+      const osc = beepContext.createOscillator();
+      const gain = beepContext.createGain();
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.0001, beepContext.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.25, beepContext.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, beepContext.currentTime + 0.4);
+      osc.connect(gain).connect(beepContext.destination);
+      osc.start(); osc.stop(beepContext.currentTime + 0.45);
+    } catch { /* som bloqueado até o primeiro toque */ }
+    if ("Notification" in window && Notification.permission === "granted") {
+      const title = m.targetId ? `🔒 ${m.sender} (privado)` : `${m.sender} — equipe`;
+      const body = m.audio ? "🎙️ Áudio da equipe" : (m.text || "Novo recado da equipe").slice(0, 180);
+      try { new Notification(title, { body, tag: `hub-${m.senderId}` }); } catch { /* sem permissão */ }
+    }
+  }
+
+  let screen = null, offset = 0;
+  connect(room, "screen", (payload, sentAt) => { screen = payload; offset = Date.now() - (sentAt ?? Date.now()); });
+  setInterval(() => {
+    document.getElementById("clock").textContent = screen?.timer ? formatClock(timerMs(screen.timer, offset)) : "--:--";
+  }, 250);
+
+  function addMessage(m) {
+    if (!m || m.kind === "presence") return;
+    if (m.id && seen.has(m.id)) return;
+    if (m.id) seen.add(m.id);
+    if (Number(m.at || 0) < sessionStart) return;
+    const me = (nameEl.value || "").trim();
+    if (m.targetId && m.targetId !== memberId && m.senderId !== memberId) return;
+    if (!m.targetId && m.target && m.target !== me && m.sender !== me) return;
+    allMessages.push(m);
+    allMessages.sort((a, b) => Number(a.at) - Number(b.at));
+    const thread = threadOf(m);
+    const mine = m.senderId === memberId;
+    if (!mine) {
+      if (thread !== currentThread()) unread[thread] = (unread[thread] || 0) + 1;
+      alertNew(m);
+    }
+    renderList();
+  }
+
+  document.getElementById("clear").addEventListener("click", () => {
+    allMessages.length = 0;
+    Object.keys(unread).forEach((k) => delete unread[k]);
+    sessionStart = Date.now();
+    sessionStorage.setItem(sessionKey, String(sessionStart));
+    renderList();
+  });
+
+  function publish(payload) {
+    const option = targetEl.selectedOptions[0];
+    const message = { id: uid(), senderId: memberId, sender: (nameEl.value || "Equipe").trim(), targetId: targetEl.value || null, target: targetEl.value ? option?.textContent?.replace(/^Privado · /, "") || null : null, at: Date.now(), ...payload };
+    crew.send(message);
+    addMessage(message);
+  }
+
+
+
+  document.getElementById("send").addEventListener("click", () => {
+    const input = document.getElementById("text");
+    if (!input.value.trim()) return;
+    publish({ text: input.value.trim() });
+    input.value = "";
+  });
+  document.getElementById("text").addEventListener("keydown", (e) => { if (e.key === "Enter") document.getElementById("send").click(); });
+
+  function publishAudio(blob) {
+    if (blob.size > 8 * 1024 * 1024) {
+      alert("O áudio ficou muito grande. Grave uma mensagem mais curta.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => publish({ audio: String(reader.result) });
+    reader.readAsDataURL(blob);
+  }
+
+  const fileEl = document.getElementById("audioFile");
+  fileEl.addEventListener("change", (event) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      if (file.type && file.type.startsWith("video/")) {
+        alert("Esse arquivo é vídeo. Escolha uma gravação de voz (áudio).");
+      } else {
+        publishAudio(file);
+      }
+    }
+    event.target.value = "";
+  });
+
+  // Em HTTP local, iPhone bloqueia getUserMedia. Nessa situação abrimos o seletor de áudio do aparelho.
+  let recorder = null;
+  let ticker = null;
+  const recBtn = document.getElementById("rec");
+  function resetButton() {
+    if (ticker) { clearInterval(ticker); ticker = null; }
+    recBtn.textContent = "🎙️ Áudio";
+    recBtn.classList.remove("primary");
+  }
+  recBtn.addEventListener("click", async () => {
+    if (recorder) { recorder.stop(); return; }
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+      fileEl.click();
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+      const chunks = [];
+      const preferred = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"].find((t) => window.MediaRecorder.isTypeSupported?.(t));
+      recorder = preferred ? new MediaRecorder(stream, { mimeType: preferred }) : new MediaRecorder(stream);
+      const mimeType = recorder.mimeType || preferred || "audio/webm";
+      recorder.ondataavailable = (e) => { if (e.data?.size) chunks.push(e.data); };
+      recorder.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        recorder = null;
+        resetButton();
+        if (chunks.length) publishAudio(new Blob(chunks, { type: mimeType }));
+      };
+      recorder.start();
+      const startedAt = Date.now();
+      recBtn.classList.add("primary");
+      recBtn.textContent = "⏹️ 0s";
+      ticker = setInterval(() => {
+        const secs = Math.floor((Date.now() - startedAt) / 1000);
+        recBtn.textContent = `⏹️ ${secs}s`;
+        if (secs >= 120) recorder?.stop();
+      }, 500);
+    } catch {
+      recorder = null;
+      resetButton();
+      fileEl.click();
+    }
+  });
+</script>
+  <footer class="site-footer">Sistema desenvolvido por <strong>Joanderson Andrade</strong></footer>
+<script>
+  (() => {
+    const sala = new URL(location.href).searchParams.get("sala") || localStorage.getItem("hub:sala");
+    if (!sala) return;
+    for (const a of document.querySelectorAll(".appnav a")) a.href += "?sala=" + encodeURIComponent(sala);
+  })();
+</script>
+</body>
+</html>

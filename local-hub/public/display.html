@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tela do palco — offline</title>
+<link rel="stylesheet" href="/style.css" />
+<style>
+  body { overflow: hidden; }
+  #stage { position: fixed; inset: 0; background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.5vh; text-align: center; }
+  #timer { position: absolute; left: 50%; transform: translate(-50%, -50%); font-variant-numeric: tabular-nums; font-weight: 800; line-height: 1; z-index: 2; }
+  #timer.overtime { color: #ff2d2d !important; animation: overtimePulse 1s ease-in-out infinite; }
+  @keyframes overtimePulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+  #timer.small { top: 4%; transform: translate(-50%, 0); font-size: 4.5vw !important; opacity: .9; background: rgba(0,0,0,.45); padding: .4vh 1vw; border-radius: 12px; }
+  #image { position: absolute; object-fit: contain; transform: translate(-50%, -50%); }
+  #message { position: absolute; transform: translate(-50%, -50%); box-sizing: border-box; max-width: 96vw; text-align: center; font-weight: 800; padding: 1vh 2vw; border-radius: 16px; line-height: 1.05; overflow-wrap: break-word; z-index: 3; }
+  #note { box-sizing: border-box; max-width: 92vw; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; line-height: 1.1; padding: .6vh 1.4vw; border-radius: 12px; border: 2px solid rgba(255,255,255,.25); background: rgba(255,255,255,.08); overflow-wrap: break-word; z-index: 2; }
+  #note.abs-top { position: absolute; left: 50%; top: 3%; transform: translateX(-50%); }
+  #note.abs-bottom { position: absolute; left: 50%; bottom: 8%; transform: translateX(-50%); }
+  #lyrics { position: relative; width: 92vw; overflow: hidden; white-space: pre-line; font-weight: 800; line-height: 1.15; z-index: 1; }
+  #lyrics.cue { display: flex; align-items: center; justify-content: center; }
+  #lyrics .roll { animation-name: stage-lyrics-roll; animation-timing-function: linear; animation-iteration-count: 1; animation-fill-mode: forwards; will-change: transform; }
+  #info { position: absolute; left: 0; right: 0; bottom: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 2vw; padding: 0 2vw 1.6vh; font-weight: 600; opacity: .78; z-index: 2; }
+  #chrome { position: fixed; left: 12px; bottom: 12px; font-size: 12px; color: #fff9; z-index: 4; }
+  #alert { position: fixed; inset: 0; pointer-events: none; opacity: 0; z-index: 5; }
+  #alert.active { animation: stage-alert .35s ease-in-out 6 alternate; }
+  #alertGlow { position: fixed; inset: 0; pointer-events: none; opacity: 0; z-index: 5; }
+  #alertGlow.active { animation: stage-alert .35s ease-in-out 6 alternate; }
+  #enable { position: fixed; right: 12px; bottom: 12px; z-index: 6; }
+  @keyframes stage-alert { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes stage-lyrics-roll { from { transform: translateY(60%); } to { transform: translateY(-100%); } }
+  @media (prefers-reduced-motion: reduce) { #alert.active, #alertGlow.active { animation-duration: .8s; animation-iteration-count: 2; } }
+</style>
+</head>
+<body>
+<div id="stage">
+  <img id="image" hidden />
+  <div id="timer">--:--</div>
+  <div id="note" hidden></div>
+  <div id="lyrics" hidden></div>
+  <div id="info" hidden></div>
+  <div id="message" hidden></div>
+</div>
+<div id="chrome"></div>
+<div id="alert" aria-hidden="true"></div>
+<div id="alertGlow" aria-hidden="true"></div>
+<button id="enable">🔊 Ativar alertas</button>
+<script type="module">
+  import { connect, roomFromUrl, formatClock, timerMs } from "/hub.js";
+  import { findSong, nextSong, songBlocks, clampBlock, normalizeSceneStyle, normalizeSetlist } from "/setlist.js";
+
+  const room = roomFromUrl();
+  const stage = document.getElementById("stage");
+  const timerEl = document.getElementById("timer");
+  const imageEl = document.getElementById("image");
+  const messageEl = document.getElementById("message");
+  const noteEl = document.getElementById("note");
+  const lyricsEl = document.getElementById("lyrics");
+  const infoEl = document.getElementById("info");
+  const chrome = document.getElementById("chrome");
+  const alertEl = document.getElementById("alert");
+  const alertGlow = document.getElementById("alertGlow");
+  const enableEl = document.getElementById("enable");
+  let screen = null;
+  let offset = 0;
+  let lastAlert = null;
+  let lastSongKey = "";
+  let audioContext = null;
+
+  function soundAlert() {
+    if (!audioContext) return;
+    const oscillator = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    oscillator.frequency.value = 880;
+    gain.gain.setValueAtTime(.0001, audioContext.currentTime);
+    gain.gain.exponentialRampToValueAtTime(.35, audioContext.currentTime + .02);
+    gain.gain.exponentialRampToValueAtTime(.0001, audioContext.currentTime + .55);
+    oscillator.connect(gain).connect(audioContext.destination);
+    oscillator.start();
+    oscillator.stop(audioContext.currentTime + .6);
+  }
+
+  enableEl.addEventListener("click", async () => {
+    audioContext = audioContext || new AudioContext();
+    await audioContext.resume();
+    enableEl.hidden = true;
+    document.documentElement.requestFullscreen?.().catch(() => {});
+  });
+
+  const hub = connect(room, "screen", (payload, sentAt) => {
+    screen = payload;
+    offset = Date.now() - (sentAt ?? Date.now());
+    const alertAge = Date.now() - offset - Number(payload.alert?.at || 0);
+    if (payload.alert?.id && payload.alert.id !== lastAlert && alertAge < 10_000) {
+      lastAlert = payload.alert.id;
+      const color = payload.alertColor || "#ff2d2d";
+      alertEl.style.border = `3vw solid ${color}`;
+      alertGlow.style.background = color;
+      alertGlow.style.opacity = 0;
+      for (const el of [alertEl, alertGlow]) {
+        el.classList.remove("active");
+        void el.offsetWidth;
+        el.classList.add("active");
+      }
+      navigator.vibrate?.([250, 100, 250, 100, 400]);
+      soundAlert();
+    }
+    render();
+  }, (status) => { chrome.textContent = `${status === "connected" ? "LOCAL AO VIVO" : "RECONECTANDO"} · sala ${room}`; });
+
+  // Encontra o maior tamanho de fonte que cabe no espaço disponível.
+  function fit(el, availW, availH, scale = 1) {
+    el.style.width = `${availW}px`;
+    el.style.maxWidth = "none";
+    el.style.whiteSpace = "pre-line";
+    let lo = 6;
+    let hi = availH;
+    for (let i = 0; i < 20; i++) {
+      const mid = (lo + hi) / 2;
+      el.style.fontSize = `${mid}px`;
+      if (el.scrollWidth <= availW + 1 && el.scrollHeight <= availH) lo = mid; else hi = mid;
+    }
+    el.style.fontSize = `${lo * Math.max(0.4, Math.min(scale || 1, 2))}px`;
+  }
+
+  function render() {
+    if (!screen) return;
+    const style = normalizeSceneStyle(screen.sceneStyle);
+    stage.style.background = screen.background || "#000";
+    const now = Date.now() - offset;
+    const message = screen.message && (screen.message.pinned || !screen.message.expiresAt || screen.message.expiresAt > now)
+      ? screen.message : null;
+    const image = screen.image || null;
+
+    // Imagem sem aviso = destaque total: ocupa a tela inteira sem cortar.
+    const exclusive = Boolean(image && !message);
+    imageEl.hidden = !image;
+    if (image) {
+      imageEl.src = image.src;
+      if (exclusive) {
+        imageEl.style.width = "100%";
+        imageEl.style.height = "100%";
+        imageEl.style.maxHeight = "100%";
+        imageEl.style.left = "50%";
+        imageEl.style.top = "50%";
+      } else {
+        imageEl.style.height = "";
+        imageEl.style.width = `${image.size ?? 90}%`;
+        imageEl.style.maxHeight = `${image.size ?? 90}%`;
+        imageEl.style.left = `${image.x ?? 50}%`;
+        imageEl.style.top = `${image.y ?? 50}%`;
+      }
+    }
+
+    messageEl.hidden = !message;
+    if (message) {
+      messageEl.textContent = message.text;
+      messageEl.style.color = message.color ?? "#ffffff";
+      messageEl.style.background = message.bg ?? "transparent";
+      messageEl.style.left = `${message.x ?? 50}%`;
+      messageEl.style.top = `${message.y ?? 50}%`;
+      fit(messageEl, window.innerWidth * 0.96, window.innerHeight * (image ? 0.5 : 0.94), Number(message.scale) || 1);
+    }
+
+    // Roteiro do show: letra, aviso do cantor e rodapé informativo.
+    const setlist = normalizeSetlist(screen.setlist);
+    const song = findSong(setlist, screen.activeSongId);
+    const next = nextSong(setlist, screen.activeSongId);
+    const hasSong = Boolean(song) && screen.showSong !== false;
+    // A letra só aparece quando não há aviso, imagem em destaque ou alerta.
+    const lyricsOn = hasSong && Boolean(String(song.lyrics || "").trim() || songBlocks(song).length) && !exclusive && !message;
+    const noteText = String(song?.stageNote ?? "").trim();
+    const noteOn = hasSong && Boolean(noteText) && !exclusive && !message;
+    const noteInline = noteOn && style.notePlacement !== "top" && style.notePlacement !== "bottom";
+
+    // Aviso do cantor: só aparece quando tem texto. Cresce livre e só reduz se não couber.
+    noteEl.hidden = !noteOn;
+    if (noteOn) {
+      noteEl.textContent = noteText;
+      noteEl.style.color = style.noteColor;
+      noteEl.className = "";
+      if (style.notePlacement === "top") noteEl.classList.add("abs-top");
+      else if (style.notePlacement === "bottom") noteEl.classList.add("abs-bottom");
+      noteEl.style.width = "";
+      noteEl.style.maxWidth = "96vw";
+      noteEl.style.fontSize = `${style.noteSize}vw`;
+      const limitH = window.innerHeight * (lyricsOn ? (noteInline ? 0.4 : 0.32) : 0.9);
+      if (noteEl.scrollHeight > limitH || noteEl.scrollWidth > window.innerWidth * 0.96) {
+        fit(noteEl, window.innerWidth * 0.96, limitH, 1);
+      }
+    }
+
+
+    // Letra: rolagem automática ou bloco atual (gatilhos).
+    lyricsEl.hidden = !lyricsOn;
+    if (lyricsOn) {
+      lyricsEl.style.color = style.lyricColor;
+      const blocks = songBlocks(song);
+      const cueMode = song.lyricMode === "cue" && blocks.length > 0;
+      // Divide a altura com o aviso do cantor quando ele fica junto da letra.
+      const availH = window.innerHeight * (noteInline ? 0.5 : 0.66);
+      lyricsEl.style.maxHeight = `${availH}px`;
+      if (cueMode) {
+        const block = blocks[clampBlock(song, Number(screen.blockIndex) || 0)] ?? "";
+        lyricsEl.classList.add("cue");
+        lyricsEl.innerHTML = "";
+        const span = document.createElement("div");
+        span.textContent = block;
+        lyricsEl.append(span);
+        fit(span, window.innerWidth * 0.92, availH, style.lyricSize / 6);
+      } else {
+        lyricsEl.classList.remove("cue");
+        lyricsEl.style.maskImage = "linear-gradient(to bottom, transparent, #000 12%, #000 88%, transparent)";
+        const key = `${song.id}-${song.durationSec ?? 0}-${style.lyricSize}-${song.lyrics.length}`;
+        if (key !== lastSongKey) {
+          lastSongKey = key;
+          lyricsEl.innerHTML = "";
+          const roll = document.createElement("div");
+          roll.className = "roll";
+          roll.textContent = song.lyrics;
+          roll.style.fontSize = `${Math.max(1.6, style.lyricSize * 0.7)}vw`;
+          roll.style.animationDuration = `${Math.max(20, song.durationSec ?? 210)}s`;
+          lyricsEl.append(roll);
+        }
+      }
+    } else {
+      lastSongKey = "";
+    }
+
+    // Rodapé: cada informação só aparece quando o campo está preenchido.
+    // Com mensagem importante na tela, o rodapé some para dar destaque total.
+    const items = [];
+    if (hasSong && style.showInfo && !exclusive && !message) {
+      if (String(song.title ?? "").trim()) items.push(`Tocando agora: ${song.title}`);
+      if (String(next?.title ?? "").trim()) items.push(`Próxima: ${next.title}`);
+      if (String(song.block ?? "").trim()) items.push(`Bloco: ${song.block}`);
+    }
+    infoEl.hidden = items.length === 0;
+    if (items.length) {
+      infoEl.innerHTML = "";
+      infoEl.style.color = style.infoColor;
+      infoEl.style.fontSize = `${style.infoSize}vw`;
+      for (const text of items) {
+        const span = document.createElement("span");
+        span.textContent = text;
+        infoEl.append(span);
+      }
+    }
+
+    // Com aviso na tela o cronômetro some (a menos que o operador peça para manter).
+    const keepTimer = screen.keepTimerOnMessage === true;
+    const compact = Boolean(message || image || lyricsOn || noteOn);
+    const showTimer = !(message && !keepTimer);
+    timerEl.hidden = !showTimer;
+    timerEl.classList.toggle("small", compact);
+    timerEl.style.top = compact ? "" : "50%";
+    timerEl.style.fontSize = compact ? "" : "22vw";
+    // Cronômetro encolhe sozinho conforme a letra/aviso do cantor aumentam.
+    if (compact && (lyricsOn || noteOn)) {
+      const noteSz = noteOn ? style.noteSize : 0;
+      const auto = Math.max(1.1, Math.min(4.6, 4.6 - Math.max(0, style.lyricSize - 6) * 0.2 - Math.max(0, noteSz - 4) * 0.16));
+      timerEl.style.setProperty("font-size", `${auto}vw`, "important");
+    } else {
+      timerEl.style.removeProperty("font-size");
+    }
+    timerEl.style.color = screen.timer?.color ?? "#ffffff";
+    // Posição livre do cronômetro, definida no painel (arrastar/deslizar).
+    const offX = Number(screen.timerOffsetX ?? 0);
+    const offY = Number(screen.timerOffsetY ?? 0);
+    const base = compact ? "translate(-50%, 0)" : "translate(-50%, -50%)";
+    timerEl.style.transform = `${base} translate(${offX}%, ${offY}%)`;
+    timerEl.style.textShadow = exclusive ? "0 2px 12px rgba(0,0,0,.9)" : "";
+
+  }
+
+  setInterval(() => {
+    if (screen?.timer) {
+      const left = timerMs(screen.timer, offset);
+      timerEl.textContent = formatClock(left);
+      // Tempo estourado: vermelho piscando, continua contando no negativo.
+      timerEl.classList.toggle("overtime", screen.timer.mode === "down" && left <= 0);
+    }
+    render();
+  }, 200);
+</script>
+</body>
+</html>

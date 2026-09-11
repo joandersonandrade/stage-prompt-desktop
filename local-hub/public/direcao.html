@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Direção musical — Stage Prompt</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<main class="shell">
+  <header class="brandbar">
+    <div><span class="brand-mark">SP</span><strong>DIREÇÃO MUSICAL</strong><small class="credit">por Joanderson Andrade</small></div>
+    <a class="sair-sala" href="/" style="margin-left:auto;margin-right:10px;font-size:12px;color:#9aa3b2;text-decoration:none">Sair da sala</a><span class="status"><span class="dot" id="dot"></span><span id="state">conectando</span></span>
+  </header>
+
+  <div class="card">
+    <h2>Cronômetro do show</h2>
+    <p id="clock" style="font-size:36px;font-weight:700;text-align:center;font-variant-numeric:tabular-nums;margin:4px 0">--:--</p>
+    <div class="row" style="margin-top:8px">
+      <button id="tStart" class="primary" style="flex:1">Iniciar</button>
+      <button id="tPause" style="flex:1">Pausar</button>
+      <button id="tReset" style="flex:1">Zerar</button>
+    </div>
+    <div class="row" style="margin-top:6px">
+      <button data-min="0" class="tset" style="flex:1">Progressivo</button>
+      <button data-min="15" class="tset" style="flex:1">15 min</button>
+      <button data-min="30" class="tset" style="flex:1">30 min</button>
+      <button data-min="60" class="tset" style="flex:1">1 h</button>
+    </div>
+    <div class="row" style="margin-top:6px">
+      <label style="flex:1">Minutos <input id="tMin" type="number" min="0" value="30" /></label>
+      <label style="flex:1">Segundos <input id="tSec" type="number" min="0" max="59" value="0" /></label>
+      <button id="tSet" class="primary" style="flex:1">Definir tempo</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Chat da equipe</h2>
+    <div id="chatList" style="max-height:34vh;overflow:auto;display:flex;flex-direction:column;gap:6px"></div>
+    <div class="row" style="margin-top:8px">
+      <input id="chatName" placeholder="Seu nome" style="flex:0 0 130px" maxlength="40" />
+      <input id="chatText" placeholder="Escreva um recado" style="flex:1" />
+      <button id="chatSend" class="primary">Enviar</button>
+    </div>
+  </div>
+
+
+  <div class="card">
+    <h2>No palco agora</h2>
+    <p id="nowTitle" style="font-size:20px;font-weight:700;margin:4px 0">—</p>
+    <p class="hint" id="nowInfo"></p>
+    <div class="row" style="margin-top:8px">
+      <button id="prev" style="flex:1">◀ Voltar</button>
+      <button id="next" class="primary" style="flex:1">Avançar ▶</button>
+      <button id="off" style="flex:1">Retirar da tela</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Aviso rápido no palco</h2>
+    <textarea id="msg" rows="2" placeholder="Ex.: Repetir o refrão" style="width:100%"></textarea>
+    <div class="row" style="margin-top:8px">
+      <label style="flex:0 0 110px">Segundos <input id="secs" type="number" value="20" min="3" max="600" /></label>
+      <button id="send" class="primary" style="flex:1">Enviar</button>
+      <button id="urgent" class="accent" style="flex:1">Urgente</button>
+      <button id="clear" style="flex:1">Limpar tela</button>
+    </div>
+    <p class="hint" id="msgStatus"></p>
+  </div>
+
+  <div class="card">
+    <h2>Roteiro do show</h2>
+    <div id="list"></div>
+    <p class="hint" id="listStatus"></p>
+  </div>
+
+  <footer class="site-footer">Sistema desenvolvido por <strong>Joanderson Andrade</strong></footer>
+</main>
+<nav class="appnav"><a data-nav="painel" href="/control.html" class="">Painel</a><a data-nav="direcao" href="/direcao.html" class="active">Direção</a><a data-nav="equipe" href="/crew.html" class="">Equipe</a><a data-nav="telao" href="/display.html" target="_blank" class="">Telão</a></nav>
+
+<script type="module">
+  import { connect, roomFromUrl, uid, formatClock, timerMs } from "/hub.js";
+  setInterval(() => {
+    const el = document.getElementById("clock");
+    el.textContent = screen.timer ? formatClock(timerMs(screen.timer, 0)) : "--:--";
+  }, 500);
+  import { normalizeSetlist, findSong, nextSong } from "/setlist.js";
+  const room = roomFromUrl();
+  const $ = (id) => document.getElementById(id);
+
+  const screen = { timer: null, setlist: [], activeSongId: null, blockIndex: 0, showSong: true, message: null };
+  let ready = false;
+
+  const hub = connect(room, "screen", (saved) => {
+    if (!saved?.timer) return;
+    ready = true;
+    Object.assign(screen, saved);
+    render();
+  }, (status) => {
+    $("state").textContent = status === "connected" ? "central local" : "reconectando";
+    $("dot").classList.toggle("on", status === "connected");
+  }, { role: "direcao" });
+
+  const push = () => hub.send(JSON.parse(JSON.stringify(screen)));
+
+  // Controle do cronômetro do show pela direção/produção geral.
+  const nowMs = () => Date.now();
+  const elapsed = (t) => Math.max(0, (t.accumulatedMs || 0) + (t.running && t.startedAt ? nowMs() - new Date(t.startedAt).getTime() : 0));
+  const withTimer = (fn) => {
+    screen.timer = screen.timer || { mode: "down", durationMs: 300000, accumulatedMs: 0, running: false, startedAt: null, color: "#ffffff" };
+    fn(screen.timer);
+    push();
+  };
+  $("tStart").addEventListener("click", () => withTimer((t) => { t.accumulatedMs = elapsed(t); t.running = true; t.startedAt = new Date().toISOString(); }));
+  $("tPause").addEventListener("click", () => withTimer((t) => { t.accumulatedMs = elapsed(t); t.running = false; t.startedAt = null; }));
+  $("tReset").addEventListener("click", () => withTimer((t) => { t.accumulatedMs = 0; t.running = false; t.startedAt = null; }));
+  for (const btn of document.querySelectorAll(".tset")) {
+    btn.addEventListener("click", () => withTimer((t) => {
+      const min = Number(btn.dataset.min) || 0;
+      t.mode = min > 0 ? "down" : "up";
+      t.durationMs = min * 60000;
+      t.accumulatedMs = 0;
+      t.running = false;
+      t.startedAt = null;
+    }));
+  }
+  // Tempo livre editável pela direção musical.
+  $("tSet").addEventListener("click", () => withTimer((t) => {
+    const min = Math.max(0, Number($("tMin").value) || 0);
+    const sec = Math.min(59, Math.max(0, Number($("tSec").value) || 0));
+    t.mode = "down";
+    t.durationMs = (min * 60 + sec) * 1000;
+    t.accumulatedMs = 0;
+    t.running = false;
+    t.startedAt = null;
+  }));
+
+  // Chat da equipe (mesma sala da aba Equipe).
+  const chatId = uid();
+  const chatList = $("chatList");
+  const crew = connect(room, "crew", (m) => {
+    if (!m?.text) return;
+    const div = document.createElement("div");
+    div.className = "msg" + (m.senderId === chatId ? " me" : "");
+    const head = document.createElement("small");
+    head.textContent = `${m.sender} · ${new Date(m.at || Date.now()).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+    const body = document.createElement("p");
+    body.style.margin = "2px 0 0";
+    body.textContent = m.text;
+    div.append(head, body);
+    chatList.append(div);
+    chatList.scrollTop = chatList.scrollHeight;
+  }, () => undefined, { id: chatId, name: "Direção musical", role: "direcao" });
+  $("chatSend").addEventListener("click", () => {
+    const text = $("chatText").value.trim();
+    if (!text) return;
+    crew.send({ id: uid(), senderId: chatId, sender: ($("chatName").value || "Direção musical").trim(), at: Date.now(), text });
+    $("chatText").value = "";
+  });
+  $("chatText").addEventListener("keydown", (e) => { if (e.key === "Enter") $("chatSend").click(); });
+
+
+  function activate(id) {
+    screen.activeSongId = id;
+    screen.blockIndex = 0;
+    screen.showSong = true;
+    push();
+    render();
+  }
+
+  function render() {
+    const list = normalizeSetlist(screen.setlist);
+    const active = findSong(list, screen.activeSongId);
+    const upcoming = nextSong(list, screen.activeSongId);
+    $("nowTitle").textContent = screen.showSong === false || !active ? "Nada em exibição" : (active.title || "Sem título");
+    $("nowInfo").textContent = `${active?.block ? "Bloco: " + active.block + " · " : ""}Próxima: ${upcoming?.title || "—"}`;
+    $("listStatus").textContent = list.length ? `${list.length} música(s) no roteiro.` : (ready ? "O roteiro ainda não foi montado no painel do operador." : "Carregando…");
+
+    const groups = new Map();
+    for (const song of list) {
+      const rep = (song.repertoire || "").trim() || "Repertório";
+      const block = (song.block || "").trim() || "Sem bloco";
+      const blocks = groups.get(rep) ?? new Map();
+      blocks.set(block, [...(blocks.get(block) ?? []), song]);
+      groups.set(rep, blocks);
+    }
+    const container = $("list");
+    container.innerHTML = "";
+    for (const [rep, blocks] of groups) {
+      const wrap = document.createElement("div");
+      wrap.style.margin = "8px 0";
+      const title = document.createElement("strong");
+      title.textContent = rep;
+      wrap.appendChild(title);
+      for (const [block, songs] of blocks) {
+        const label = document.createElement("p");
+        label.className = "hint";
+        label.textContent = block;
+        wrap.appendChild(label);
+        for (const song of songs) {
+          const button = document.createElement("button");
+          button.style.width = "100%";
+          button.style.textAlign = "left";
+          button.style.marginBottom = "4px";
+          if (song.id === screen.activeSongId && screen.showSong !== false) button.className = "primary";
+          button.textContent = song.title || "Sem título";
+          if ((song.stageNote || "").trim()) {
+            const note = document.createElement("small");
+            note.style.display = "block";
+            note.textContent = song.stageNote;
+            button.appendChild(note);
+          }
+          button.addEventListener("click", () => activate(song.id));
+          wrap.appendChild(button);
+        }
+      }
+      container.appendChild(wrap);
+    }
+  }
+
+  $("next").addEventListener("click", () => {
+    const list = normalizeSetlist(screen.setlist);
+    if (!list.length) return;
+    const target = nextSong(list, screen.activeSongId) ?? list[0];
+    if (target) activate(target.id);
+  });
+  $("prev").addEventListener("click", () => {
+    const list = normalizeSetlist(screen.setlist);
+    if (!list.length) return;
+    const index = list.findIndex((s) => s.id === screen.activeSongId);
+    const target = index > 0 ? list[index - 1] : list[list.length - 1];
+    if (target) activate(target.id);
+  });
+  $("off").addEventListener("click", () => { screen.showSong = false; push(); render(); });
+
+  const readMessage = (text, seconds) => ({
+    text,
+    scale: 1,
+    x: 50,
+    y: 50,
+    color: "#ffffff",
+    bg: "#000000",
+    pinned: false,
+    expiresAt: Date.now() + Math.max(3, Number(seconds) || 20) * 1000,
+  });
+
+  $("send").addEventListener("click", () => {
+    const text = $("msg").value.trim();
+    if (!text) return;
+    screen.message = readMessage(text, $("secs").value);
+    push();
+    $("msg").value = "";
+    $("msgStatus").textContent = "Aviso enviado ao palco.";
+  });
+  $("urgent").addEventListener("click", () => {
+    const text = $("msg").value.trim();
+    if (!text) return;
+    screen.message = readMessage(text, $("secs").value);
+    screen.alert = { id: uid(), at: Date.now() };
+    push();
+    $("msg").value = "";
+    $("msgStatus").textContent = "Aviso urgente enviado ao palco.";
+  });
+  $("clear").addEventListener("click", () => {
+    screen.message = null;
+    screen.alert = null;
+    push();
+    $("msgStatus").textContent = "Tela do palco liberada.";
+  });
+
+  render();
+</script>
+<script>
+  (() => {
+    const sala = new URL(location.href).searchParams.get("sala") || localStorage.getItem("hub:sala");
+    if (!sala) return;
+    for (const a of document.querySelectorAll(".appnav a")) a.href += "?sala=" + encodeURIComponent(sala);
+  })();
+</script>
+</body>
+</html>

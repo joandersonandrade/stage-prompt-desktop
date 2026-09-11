@@ -1,0 +1,778 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Operador — offline</title>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<main id="app" hidden>
+  <div class="row" style="justify-content:space-between">
+    <h1>Operador · <span id="roomLabel"></span></h1>
+    <a class="sair-sala" href="/" style="margin-left:auto;margin-right:10px;font-size:12px;color:#9aa3b2;text-decoration:none">Sair da sala</a><span class="status"><span class="dot" id="dot"></span><span id="state">conectando</span></span>
+  </div>
+
+  <div class="card">
+    <h2>Cronômetro</h2>
+    <div class="big" id="clock">00:00</div>
+    <div class="row">
+      <select id="mode"><option value="down">Regressivo</option><option value="up">Progressivo</option></select>
+      <input id="duration" placeholder="mm:ss ou h:mm:ss" style="flex:1" inputmode="numeric" />
+      <button id="apply">Definir</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <label>Cor do cronômetro <input id="timerColor" type="color" value="#ffffff" /></label>
+      <button class="danger" id="alert">⚠️ Alertar artista</button>
+      <button id="clearAlert">✕ Retirar aviso</button>
+    </div>
+    <div class="grid" style="margin-top:8px" id="presets"></div>
+    <div class="grid" style="margin-top:8px">
+      <button class="primary" id="start">Iniciar</button>
+      <button id="pause">Pausar</button>
+      <button id="reset">Zerar</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Aviso na tela</h2>
+    <textarea id="text" rows="2" placeholder="Ex.: Próxima música em 20 segundos" style="width:100%"></textarea>
+    <label style="display:block;margin-top:8px">Tamanho do texto (ajuste automático)
+      <input id="size" type="range" value="100" min="60" max="140" step="5" style="width:100%" />
+      <span class="hint" id="sizeLabel">Automático 100%</span>
+    </label>
+    <div class="grid" style="margin-top:8px">
+      <label>Texto <input id="color" type="color" value="#ffffff" /></label>
+      <label>Fundo <input id="bg" type="color" value="#000000" /></label>
+      <label>Segundos <input id="secs" type="number" value="10" min="0" /></label>
+      <label>Manter cronômetro <input id="keepTimer" type="checkbox" /></label>
+    </div>
+
+    <div class="grid" style="margin-top:8px">
+      <button class="primary" id="showMsg">Exibir</button>
+      <button id="pinMsg">Fixar</button>
+      <button class="danger" id="clearMsg">✕ Retirar da tela</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Roteiro do show (teleprompter)</h2>
+    <p class="hint">Monte repertórios, blocos e músicas. Clique em uma música para jogar no telão — funciona sem MIDI. Com B-Beat/DAW, a nota MIDI de cada música ativa sozinha e a nota 99 dispara o Aviso Urgente.</p>
+    <div class="row">
+      <button class="primary" id="songNew">+ Nova música</button>
+      <button id="songPrev">◀ Anterior</button>
+      <button class="primary" id="songNext">Avançar ▶</button>
+      <button class="danger" id="songOff">✕ Retirar da tela</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button id="blockPrev">◀ Frase anterior</button>
+      <button class="primary" id="blockNext">Próxima frase ▶</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button id="setExport">⬇ Baixar backup (.json)</button>
+      <button id="setImportBtn">⬆ Carregar arquivo salvo</button>
+      <input id="setImport" type="file" accept="application/json,.json" hidden />
+    </div>
+    <p class="hint" id="setStatus"></p>
+    <div id="songList" style="margin-top:8px"></div>
+    <div id="songEditor" hidden style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <h2>Aparência do teleprompter</h2>
+    <div class="grid">
+      <label>Tamanho da letra <input id="stLyric" type="range" min="2" max="60" step="0.5" value="6" style="width:100%" /></label>
+      <label>Tamanho do aviso <input id="stNote" type="range" min="1.5" max="60" step="0.5" value="4" style="width:100%" /></label>
+      <label>Tamanho exato do aviso <input id="stNoteNum" type="number" min="1" max="200" step="0.5" value="4" style="width:100%" /></label>
+      <label>Tamanho do rodapé <input id="stInfo" type="range" min="1" max="5" step="0.2" value="2.2" style="width:100%" /></label>
+      <label>Cronômetro — horizontal <input id="tmX" type="range" min="-45" max="45" step="1" value="0" style="width:100%" /></label>
+      <label>Cronômetro — vertical <input id="tmY" type="range" min="-45" max="45" step="1" value="0" style="width:100%" /></label>
+      <button id="tmCenter" style="grid-column:1/-1">◎ Centralizar cronômetro</button>
+
+
+      <label>Posição do aviso
+        <select id="stPlace" style="width:100%">
+          <option value="top">Sobre o topo</option>
+          <option value="above-lyrics">Acima da letra</option>
+          <option value="below-lyrics">Abaixo da letra</option>
+          <option value="bottom">No rodapé</option>
+        </select>
+      </label>
+    </div>
+    <div class="grid" style="margin-top:8px">
+      <label>Cor da letra <input id="stLyricColor" type="color" value="#ffffff" /></label>
+      <label>Cor do aviso <input id="stNoteColor" type="color" value="#ffe600" /></label>
+      <label>Cor do rodapé <input id="stInfoColor" type="color" value="#ffffff" /></label>
+      <label>Cor de chamar atenção <input id="stAttention" type="color" value="#ffe600" /></label>
+    </div>
+    <p class="hint" id="midiStatus">MIDI: procurando dispositivos…</p>
+  </div>
+
+  <div class="card">
+    <h2>Imagem</h2>
+    <input id="file" type="file" accept="image/*" style="width:100%" />
+    <div class="grid" style="margin-top:8px">
+      <label>Tamanho % <input id="isize" type="number" value="90" min="10" max="100" /></label>
+      <label>Horizontal % <input id="ix" type="number" value="50" min="0" max="100" /></label>
+      <label>Vertical % <input id="iy" type="number" value="50" min="0" max="100" /></label>
+      <button id="clearImg">Remover imagem</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Acessos da sala</h2>
+    <p class="hint">O código administrativo dá controle total. Compartilhe apenas o PIN ou QR da equipe com os colaboradores.</p>
+    <div class="access-grid">
+      <article class="access-item"><strong>Equipe</strong><div class="pin" id="teamPin"></div><img id="crewQr" alt="QR Code para a equipe" /><a id="crewAccess" href="#"></a></article>
+      <article class="access-item"><strong>Outro administrador</strong><div class="pin" id="adminValue"></div><img id="adminQr" alt="QR Code administrativo" /><a id="adminAccess" href="#"></a></article>
+      <article class="access-item"><strong>Telão</strong><img id="displayQr" alt="QR Code do telão" /><a id="displayAccess" href="#"></a></article>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Abas salvas neste aparelho</h2>
+    <div class="row"><input id="sceneName" placeholder="Nome da aba" style="flex:1" /><button id="saveScene">Salvar atual</button></div>
+    <div class="grid" id="scenes" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <h2>Comunicação da equipe</h2>
+    <p class="hint">Abra o rádio do operador para ver quem está conectado e enviar recados gerais ou privados.</p>
+    <a id="crewLink" href="#"><button class="primary" style="width:100%">Abrir rádio do operador</button></a>
+  </div>
+
+  <p style="color:var(--muted);font-size:12px">Tela do palco: <a id="displayLink" href="#"></a></p>
+</main>
+<nav class="appnav"><a data-nav="painel" href="/control.html" class="active">Painel</a><a data-nav="direcao" href="/direcao.html" class="">Direção</a><a data-nav="equipe" href="/crew.html" class="">Equipe</a><a data-nav="telao" href="/display.html" target="_blank" class="">Telão</a></nav>
+
+<script type="module">
+  import { connect, roomFromUrl, formatClock, timerMs, parseDuration, uid } from "/hub.js";
+  import { emptySong, findSong, nextSong, songByNote, songBlocks, cueIndexByNote, clampBlock, exportSetlistFile, parseSetlistFile, normalizeSceneStyle, normalizeSetlist, ALERT_MIDI_NOTE } from "/setlist.js";
+  import qrcode from "/qrcode.mjs";
+  const room = roomFromUrl();
+  const admin = new URL(location.href).searchParams.get("admin")?.trim().toUpperCase() || "";
+  const accessCheck = await fetch(`/api/room?sala=${encodeURIComponent(room)}&admin=${encodeURIComponent(admin)}`).then((r) => r.json()).catch(() => ({ authorized: false }));
+  if (!accessCheck.authorized) location.replace(`/?sala=${encodeURIComponent(room)}&perfil=control`);
+  else document.getElementById("app").hidden = false;
+  document.getElementById("roomLabel").textContent = room;
+  document.getElementById("displayLink").textContent = `${location.origin}/display?sala=${room}`;
+  document.getElementById("displayLink").href = `/display?sala=${room}`;
+  document.getElementById("crewLink").href = `/crew?sala=${room}`;
+  const qrData = (url) => { const qr = qrcode(0, "M"); qr.addData(url); qr.make(); return qr.createDataURL(5, 8); };
+  const crewUrl = `${location.origin}/crew?sala=${encodeURIComponent(room)}`;
+  const adminUrl = `${location.origin}/control?sala=${encodeURIComponent(room)}&admin=${encodeURIComponent(admin)}`;
+  const displayUrl = `${location.origin}/display?sala=${encodeURIComponent(room)}`;
+  document.getElementById("teamPin").textContent = `PIN ${accessCheck.teamPin}`;
+  document.getElementById("adminValue").textContent = admin;
+  [["crewQr", crewUrl], ["adminQr", adminUrl], ["displayQr", displayUrl]].forEach(([id, url]) => document.getElementById(id).src = qrData(url));
+  [["crewAccess", crewUrl], ["adminAccess", adminUrl], ["displayAccess", displayUrl]].forEach(([id, url]) => { const a = document.getElementById(id); a.href = url; a.textContent = url; });
+
+  const screen = {
+    background: "#000000",
+    screen_key: "main",
+    timer: { mode: "down", durationMs: 300000, accumulatedMs: 0, running: false, startedAt: null, color: "#ffffff" },
+    message: null,
+    image: null,
+    keepTimerOnMessage: false,
+    alert: null,
+    alertColor: "#ffe600",
+    setlist: [],
+    activeSongId: null,
+    blockIndex: 0,
+    showSong: true,
+    timerOffsetX: 0,
+    timerOffsetY: 0,
+    sceneStyle: null,
+  };
+  let receivedState = false;
+  const syncControls = () => {
+    document.getElementById("mode").value = screen.timer.mode;
+    document.getElementById("timerColor").value = screen.timer.color || "#ffffff";
+    const st = normalizeSceneStyle(screen.sceneStyle);
+    document.getElementById("stLyric").value = st.lyricSize;
+    document.getElementById("stNote").value = Math.min(60, st.noteSize);
+    document.getElementById("stNoteNum").value = st.noteSize;
+    document.getElementById("tmX").value = screen.timerOffsetX ?? 0;
+    document.getElementById("tmY").value = screen.timerOffsetY ?? 0;
+    document.getElementById("stInfo").value = st.infoSize;
+    document.getElementById("stPlace").value = st.notePlacement;
+    document.getElementById("stLyricColor").value = st.lyricColor;
+    document.getElementById("stNoteColor").value = st.noteColor;
+    document.getElementById("stInfoColor").value = st.infoColor;
+    document.getElementById("stAttention").value = st.attentionColor;
+    renderSongs();
+  };
+  const hub = connect(room, "screen", (saved) => {
+    if (!saved?.timer) return;
+    receivedState = true;
+    Object.assign(screen, saved);
+    syncControls();
+  }, (s) => {
+    document.getElementById("state").textContent = s === "connected" ? "central local" : "reconectando";
+    document.getElementById("dot").classList.toggle("on", s === "connected");
+    if (s === "connected") window.setTimeout(() => { if (!receivedState) push(); }, 250);
+  }, { adminCode: admin });
+  const push = () => hub.send(JSON.parse(JSON.stringify(screen)));
+
+  // Cronômetro
+  const presets = [["30s", 30], ["1 min", 60], ["5 min", 300], ["15 min", 900], ["30 min", 1800], ["45 min", 2700], ["1 h", 3600], ["1:15", 4500], ["1:30", 5400], ["2 h", 7200]];
+  const presetBox = document.getElementById("presets");
+  for (const [label, seconds] of presets) {
+    const button = document.createElement("button");
+    button.textContent = label;
+    button.addEventListener("click", () => {
+      screen.timer = { ...screen.timer, durationMs: seconds * 1000, accumulatedMs: 0, running: false, startedAt: null };
+      document.getElementById("duration").value = label;
+      push();
+    });
+    presetBox.append(button);
+  }
+  document.getElementById("apply").addEventListener("click", () => {
+    screen.timer = { ...screen.timer, mode: document.getElementById("mode").value, durationMs: parseDuration(document.getElementById("duration").value), accumulatedMs: 0, running: false, startedAt: null };
+    push();
+  });
+  document.getElementById("mode").addEventListener("change", () => { screen.timer.mode = document.getElementById("mode").value; push(); });
+  document.getElementById("timerColor").addEventListener("input", () => { screen.timer.color = document.getElementById("timerColor").value; push(); });
+  document.getElementById("alert").addEventListener("click", () => {
+    screen.alertColor = document.getElementById("stAttention").value || "#ffe600";
+    screen.alert = { id: uid(), at: Date.now() };
+    push();
+  });
+  document.getElementById("clearAlert").addEventListener("click", () => {
+    screen.alert = null;
+    push();
+  });
+  document.getElementById("start").addEventListener("click", () => { if (!screen.timer.running) { screen.timer.running = true; screen.timer.startedAt = new Date().toISOString(); push(); } });
+  document.getElementById("pause").addEventListener("click", () => {
+    if (screen.timer.running) {
+      const startedAt = typeof screen.timer.startedAt === "number" ? screen.timer.startedAt : Date.parse(screen.timer.startedAt);
+      screen.timer.accumulatedMs = Number(screen.timer.accumulatedMs || 0) + Math.max(0, Date.now() - startedAt);
+      screen.timer.running = false;
+      screen.timer.startedAt = null;
+      push();
+    }
+  });
+  document.getElementById("reset").addEventListener("click", () => { screen.timer = { ...screen.timer, accumulatedMs: 0, running: false, startedAt: null }; push(); });
+  setInterval(() => { document.getElementById("clock").textContent = formatClock(timerMs(screen.timer)); }, 200);
+
+  // Avisos
+  const sizeInput = document.getElementById("size");
+  const sizeLabel = document.getElementById("sizeLabel");
+  const readMessage = (pinned) => ({
+    text: document.getElementById("text").value,
+    scale: Number(sizeInput.value) / 100,
+    x: 50,
+    y: 50,
+    color: document.getElementById("color").value,
+    bg: document.getElementById("bg").value,
+    pinned,
+    expiresAt: pinned ? null : Date.now() + Number(document.getElementById("secs").value) * 1000,
+  });
+  sizeInput.addEventListener("input", () => {
+    sizeLabel.textContent = `Automático ${sizeInput.value}%`;
+    if (screen.message) { screen.message = { ...screen.message, scale: Number(sizeInput.value) / 100 }; push(); }
+  });
+  const applyKeepTimer = () => { screen.keepTimerOnMessage = document.getElementById("keepTimer").checked; };
+  document.getElementById("keepTimer").addEventListener("change", () => { applyKeepTimer(); push(); });
+  document.getElementById("showMsg").addEventListener("click", () => { applyKeepTimer(); screen.message = readMessage(false); push(); });
+  document.getElementById("pinMsg").addEventListener("click", () => { applyKeepTimer(); screen.message = readMessage(true); push(); });
+  document.getElementById("clearMsg").addEventListener("click", () => { screen.message = null; push(); });
+
+
+  // Imagem
+  document.getElementById("file").addEventListener("change", (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      screen.image = { src: String(reader.result), size: Number(document.getElementById("isize").value), x: Number(document.getElementById("ix").value), y: Number(document.getElementById("iy").value) };
+      push();
+    };
+    reader.readAsDataURL(file);
+  });
+  for (const id of ["isize", "ix", "iy"]) {
+    document.getElementById(id).addEventListener("input", () => {
+      if (!screen.image) return;
+      screen.image.size = Number(document.getElementById("isize").value);
+      screen.image.x = Number(document.getElementById("ix").value);
+      screen.image.y = Number(document.getElementById("iy").value);
+      push();
+    });
+  }
+  document.getElementById("clearImg").addEventListener("click", () => { screen.image = null; push(); });
+
+  // Abas salvas
+  const load = () => JSON.parse(localStorage.getItem(`hub:cenas:${room}`) || "[]");
+  const save = (scenes) => localStorage.setItem(`hub:cenas:${room}`, JSON.stringify(scenes));
+  function renderScenes() {
+    const box = document.getElementById("scenes");
+    box.innerHTML = "";
+    load().forEach((scene, index) => {
+      const button = document.createElement("button");
+      button.className = "primary";
+      button.textContent = scene.name;
+      button.addEventListener("click", () => { screen.message = scene.message; screen.image = scene.image; push(); });
+      const edit = document.createElement("button");
+      edit.className = "ghost";
+      edit.title = "Editar aba";
+      edit.textContent = "✎";
+      const remove = document.createElement("button");
+      remove.className = "ghost";
+      remove.textContent = "✕";
+      remove.addEventListener("click", () => { const scenes = load(); scenes.splice(index, 1); save(scenes); renderScenes(); });
+      const wrap = document.createElement("div");
+      wrap.className = "row";
+      button.style.flex = "1";
+      wrap.append(button, edit, remove);
+      box.append(wrap);
+
+      // Editor da aba salva: nome, texto e imagem.
+      const editor = document.createElement("div");
+      editor.hidden = true;
+      editor.style.width = "100%";
+      const nameInput = document.createElement("input");
+      nameInput.value = scene.name;
+      nameInput.placeholder = "Nome da aba";
+      nameInput.style.width = "100%";
+      const textInput = document.createElement("textarea");
+      textInput.rows = 2;
+      textInput.style.width = "100%";
+      textInput.placeholder = "Mensagem (vazio = só imagem)";
+      textInput.value = scene.message?.text || "";
+      const fileInput = document.createElement("input");
+      fileInput.type = "file";
+      fileInput.accept = "image/*";
+      fileInput.style.width = "100%";
+      const saveBtn = document.createElement("button");
+      saveBtn.className = "primary";
+      saveBtn.textContent = "Salvar alterações";
+      const useCurrent = document.createElement("button");
+      useCurrent.textContent = "Usar tela atual";
+      const dropImg = document.createElement("button");
+      dropImg.className = "ghost";
+      dropImg.textContent = "Remover imagem";
+      const actions = document.createElement("div");
+      actions.className = "row";
+      actions.append(saveBtn, useCurrent, dropImg);
+      editor.append(nameInput, textInput, fileInput, actions);
+      box.append(editor);
+
+      edit.addEventListener("click", () => { editor.hidden = !editor.hidden; });
+      let pendingImage = undefined;
+      fileInput.addEventListener("change", (event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => { pendingImage = { src: String(reader.result), size: 90, x: 50, y: 50 }; };
+        reader.readAsDataURL(file);
+      });
+      dropImg.addEventListener("click", () => { pendingImage = null; });
+      useCurrent.addEventListener("click", () => {
+        const scenes = load();
+        scenes[index] = { ...scenes[index], message: screen.message, image: screen.image };
+        save(scenes);
+        renderScenes();
+      });
+      saveBtn.addEventListener("click", () => {
+        const scenes = load();
+        const current = scenes[index];
+        const text = textInput.value.trim();
+        scenes[index] = {
+          ...current,
+          name: nameInput.value.trim() || current.name,
+          message: text ? { ...(current.message || { size: 8, x: 50, y: 50, color: "#ffffff", bg: "#000000", pinned: true, expiresAt: null }), text } : null,
+          image: pendingImage === undefined ? current.image : pendingImage,
+        };
+        save(scenes);
+        renderScenes();
+      });
+    });
+  }
+
+  document.getElementById("saveScene").addEventListener("click", () => {
+    const name = document.getElementById("sceneName").value.trim();
+    if (!name) return;
+    const scenes = load();
+    scenes.push({ name, message: screen.message, image: screen.image });
+    save(scenes);
+    document.getElementById("sceneName").value = "";
+    renderScenes();
+  });
+  renderScenes();
+
+  // ===== Roteiro do show (teleprompter) =====
+  const songListEl = document.getElementById("songList");
+  const songEditorEl = document.getElementById("songEditor");
+  const setStatus = document.getElementById("setStatus");
+  const getSetlist = () => normalizeSetlist(screen.setlist);
+  let editingId = null;
+
+  function activateSong(id) {
+    screen.activeSongId = id;
+    screen.blockIndex = 0;
+    screen.showSong = true;
+    push();
+    renderSongs();
+  }
+
+  function renderSongs() {
+    const songs = getSetlist();
+    setStatus.textContent = songs.length
+      ? `${songs.length} música(s) guardadas na sala — salvas no sistema e no backup .json.`
+      : "Nenhuma música ainda. Clique em \"+ Nova música\".";
+    songListEl.innerHTML = "";
+    // Agrupa por repertório e bloco, mantendo a ordem da lista.
+    const reps = new Map();
+    songs.forEach((song, index) => {
+      const rep = song.repertoire.trim() || "Repertório";
+      const block = song.block.trim() || "Geral";
+      if (!reps.has(rep)) reps.set(rep, new Map());
+      const blocks = reps.get(rep);
+      if (!blocks.has(block)) blocks.set(block, []);
+      blocks.get(block).push({ song, index });
+    });
+    for (const [rep, blocks] of reps) {
+      const repEl = document.createElement("details");
+      repEl.open = true;
+      repEl.style.marginBottom = "6px";
+      const summary = document.createElement("summary");
+      summary.innerHTML = `<strong>📁 ${rep}</strong>`;
+      repEl.append(summary);
+      for (const [block, items] of blocks) {
+        const blockEl = document.createElement("div");
+        blockEl.style.margin = "4px 0 4px 12px";
+        const title = document.createElement("p");
+        title.className = "hint";
+        title.textContent = `▸ ${block}`;
+        blockEl.append(title);
+        for (const { song, index } of items) {
+          const row = document.createElement("div");
+          row.className = "row";
+          const fire = document.createElement("button");
+          fire.className = song.id === screen.activeSongId && screen.showSong !== false ? "primary" : "";
+          fire.style.flex = "1";
+          fire.textContent = `${index + 1}. ${song.title}${song.midiNote != null ? ` · nota ${song.midiNote}` : ""}`;
+          fire.addEventListener("click", () => activateSong(song.id));
+          const edit = document.createElement("button");
+          edit.className = "ghost";
+          edit.textContent = "✎";
+          edit.addEventListener("click", () => { editingId = editingId === song.id ? null : song.id; renderSongs(); });
+          const del = document.createElement("button");
+          del.className = "ghost";
+          del.textContent = "✕";
+          del.addEventListener("click", () => {
+            const list = getSetlist();
+            list.splice(index, 1);
+            screen.setlist = list;
+            if (screen.activeSongId === song.id) { screen.activeSongId = null; screen.blockIndex = 0; }
+            push();
+            renderSongs();
+          });
+          row.append(fire, edit, del);
+          blockEl.append(row);
+          if (editingId === song.id) blockEl.append(buildEditor(song, index));
+        }
+        repEl.append(blockEl);
+      }
+      songListEl.append(repEl);
+    }
+  }
+
+  function buildEditor(song, index) {
+    const draft = JSON.parse(JSON.stringify(song));
+    const box = document.createElement("div");
+    box.className = "card";
+    box.style.margin = "6px 0";
+
+    const field = (label, input) => {
+      const wrap = document.createElement("label");
+      wrap.style.display = "block";
+      wrap.style.marginTop = "6px";
+      wrap.append(label);
+      input.style.width = "100%";
+      wrap.append(input);
+      return wrap;
+    };
+    const textInput = (value, placeholder) => {
+      const el = document.createElement("input");
+      el.value = value ?? "";
+      el.placeholder = placeholder || "";
+      return el;
+    };
+    const numInput = (value) => {
+      const el = document.createElement("input");
+      el.type = "number";
+      el.min = "0"; el.max = "127";
+      el.value = value ?? "";
+      el.placeholder = "—";
+      return el;
+    };
+
+    const title = textInput(draft.title, "Título da música");
+    const rep = textInput(draft.repertoire, "Repertório (ex.: Repertório 1)");
+    const block = textInput(draft.block, "Bloco (ex.: Bloco 1)");
+    const note = numInput(draft.midiNote);
+    const mode = document.createElement("select");
+    mode.innerHTML = `<option value="scroll">Rolagem automática</option><option value="cue">Gatilhos múltiplos (MIDI)</option>`;
+    mode.value = draft.lyricMode;
+    const duration = document.createElement("input");
+    duration.type = "number"; duration.min = "20"; duration.style.width = "100%";
+    duration.value = draft.durationSec ?? 210;
+    const lyrics = document.createElement("textarea");
+    lyrics.rows = 5; lyrics.style.width = "100%";
+    lyrics.placeholder = "Letra da música";
+    lyrics.value = draft.lyrics;
+    const stageNote = document.createElement("textarea");
+    stageNote.rows = 2; stageNote.style.width = "100%";
+    stageNote.placeholder = "Aviso/instrução para o cantor (só aparece se preenchido)";
+    stageNote.value = draft.stageNote;
+    const cueNote = numInput(draft.cueNote);
+
+    const durationWrap = field("Duração da música (segundos) — rolagem automática", duration);
+    const cueNoteWrap = field("Nota MIDI que avança para a próxima frase (opcional)", cueNote);
+    const cuesBox = document.createElement("div");
+    const addCue = document.createElement("button");
+    addCue.textContent = "+ Adicionar frase";
+    addCue.type = "button";
+
+    function renderCues() {
+      cuesBox.innerHTML = "";
+      draft.cues.forEach((cue, cueIndex) => {
+        const row = document.createElement("div");
+        row.className = "row";
+        const text = textInput(cue.text, `Frase ${cueIndex + 1}`);
+        text.addEventListener("input", () => { cue.text = text.value; });
+        const cNote = numInput(cue.note);
+        cNote.style.maxWidth = "90px";
+        cNote.title = "Nota MIDI que chama esta frase";
+        cNote.addEventListener("input", () => { cue.note = cNote.value === "" ? null : Number(cNote.value); });
+        const del = document.createElement("button");
+        del.className = "ghost";
+        del.textContent = "✕";
+        del.addEventListener("click", () => { draft.cues.splice(cueIndex, 1); renderCues(); });
+        row.append(text, cNote, del);
+        cuesBox.append(row);
+      });
+      cuesBox.append(addCue);
+    }
+    addCue.addEventListener("click", () => { draft.cues.push({ id: `cue_${Math.random().toString(36).slice(2, 10)}`, text: "", note: null }); renderCues(); });
+
+    function syncMode() {
+      const cue = mode.value === "cue";
+      durationWrap.hidden = cue;
+      cueNoteWrap.hidden = !cue;
+      cuesBox.hidden = !cue;
+      lyrics.rows = cue ? 2 : 5;
+    }
+    mode.addEventListener("change", syncMode);
+
+    const actions = document.createElement("div");
+    actions.className = "row";
+    actions.style.marginTop = "8px";
+    const saveBtn = document.createElement("button");
+    saveBtn.className = "primary";
+    saveBtn.textContent = "💾 Salvar música";
+    const cancelBtn = document.createElement("button");
+    cancelBtn.textContent = "Cancelar";
+    actions.append(saveBtn, cancelBtn);
+
+    box.append(
+      field("Título da música", title),
+      field("Repertório", rep),
+      field("Bloco", block),
+      field("Nota MIDI que inicia esta música", note),
+      field("Modo da letra", mode),
+      durationWrap,
+      cueNoteWrap,
+      field("Letra completa", lyrics),
+      cuesBox,
+      field("Aviso para o cantor", stageNote),
+      actions,
+    );
+    syncMode();
+    renderCues();
+
+    saveBtn.addEventListener("click", () => {
+      draft.title = title.value.trim() || "Sem título";
+      draft.repertoire = rep.value.trim();
+      draft.block = block.value.trim();
+      draft.midiNote = note.value === "" ? null : Math.max(0, Math.min(127, Number(note.value)));
+      draft.lyricMode = mode.value === "cue" ? "cue" : "scroll";
+      draft.durationSec = Math.max(20, Number(duration.value) || 210);
+      draft.cueNote = cueNote.value === "" ? null : Math.max(0, Math.min(127, Number(cueNote.value)));
+      draft.lyrics = lyrics.value;
+      draft.stageNote = stageNote.value;
+      draft.cues = draft.cues.filter((cue) => cue.text.trim());
+      const list = getSetlist();
+      list[index] = draft;
+      screen.setlist = list;
+      editingId = null;
+      push();
+      renderSongs();
+    });
+    cancelBtn.addEventListener("click", () => { editingId = null; renderSongs(); });
+    return box;
+  }
+
+  document.getElementById("songNew").addEventListener("click", () => {
+    const song = emptySong();
+    if (getSetlist().length === 0) { song.repertoire = "Repertório 1"; song.block = "Bloco 1"; }
+    const list = getSetlist();
+    list.push(song);
+    screen.setlist = list;
+    editingId = song.id;
+    push();
+    renderSongs();
+  });
+  document.getElementById("songNext").addEventListener("click", () => {
+    const list = getSetlist();
+    if (!list.length) return;
+    const next = nextSong(list, screen.activeSongId) ?? list[0];
+    if (next) activateSong(next.id);
+  });
+  document.getElementById("songPrev").addEventListener("click", () => {
+    const list = getSetlist();
+    if (!list.length) return;
+    const index = list.findIndex((s) => s.id === screen.activeSongId);
+    const prev = index > 0 ? list[index - 1] : list[list.length - 1];
+    if (prev) activateSong(prev.id);
+  });
+  document.getElementById("songOff").addEventListener("click", () => {
+    screen.showSong = false;
+    push();
+    renderSongs();
+  });
+  // Frases da música ativa (gatilhos/blocos): avançar e voltar.
+  const stepBlock = (delta) => {
+    const song = findSong(getSetlist(), screen.activeSongId);
+    if (!song) return;
+    screen.blockIndex = clampBlock(song, Number(screen.blockIndex ?? 0) + delta);
+    screen.showSong = true;
+    push();
+  };
+  document.getElementById("blockPrev").addEventListener("click", () => stepBlock(-1));
+  document.getElementById("blockNext").addEventListener("click", () => stepBlock(1));
+  document.getElementById("tmCenter").addEventListener("click", () => {
+    screen.timerOffsetX = 0;
+    screen.timerOffsetY = 0;
+    document.getElementById("tmX").value = 0;
+    document.getElementById("tmY").value = 0;
+    push();
+  });
+  document.getElementById("setExport").addEventListener("click", () => exportSetlistFile(getSetlist(), room));
+  const importInput = document.getElementById("setImport");
+  document.getElementById("setImportBtn").addEventListener("click", () => importInput.click());
+  importInput.addEventListener("change", () => {
+    const file = importInput.files?.[0];
+    if (!file) return;
+    file.text().then((text) => {
+      try {
+        screen.setlist = parseSetlistFile(text);
+        screen.activeSongId = null;
+        screen.blockIndex = 0;
+        editingId = null;
+        push();
+        renderSongs();
+      } catch {
+        setStatus.textContent = "Arquivo inválido — escolha o backup .json gerado pelo sistema.";
+      }
+    });
+    importInput.value = "";
+  });
+
+  // Aparência do teleprompter.
+  const styleMap = [
+    ["stLyric", "lyricSize", Number],
+    ["stNote", "noteSize", Number],
+    ["stInfo", "infoSize", Number],
+    ["stPlace", "notePlacement", String],
+    ["stLyricColor", "lyricColor", String],
+    ["stNoteColor", "noteColor", String],
+    ["stInfoColor", "infoColor", String],
+    ["stAttention", "attentionColor", String],
+  ];
+  for (const [id, key, cast] of styleMap) {
+    document.getElementById(id).addEventListener("input", (event) => {
+      const style = normalizeSceneStyle(screen.sceneStyle);
+      style[key] = cast(event.target.value);
+      screen.sceneStyle = style;
+      if (key === "attentionColor") screen.alertColor = style.attentionColor;
+      if (key === "noteSize") document.getElementById("stNoteNum").value = style.noteSize;
+      push();
+    });
+  }
+
+  // Tamanho exato do aviso (sem limite do controle deslizante).
+  document.getElementById("stNoteNum").addEventListener("input", (event) => {
+    const style = normalizeSceneStyle(screen.sceneStyle);
+    style.noteSize = Math.max(1, Number(event.target.value) || 1);
+    screen.sceneStyle = style;
+    document.getElementById("stNote").value = Math.min(60, style.noteSize);
+    push();
+  });
+
+  // Posição livre do cronômetro no telão.
+  for (const [id, key] of [["tmX", "timerOffsetX"], ["tmY", "timerOffsetY"]]) {
+    document.getElementById(id).addEventListener("input", (event) => {
+      screen[key] = Number(event.target.value) || 0;
+      push();
+    });
+  }
+
+
+  // Web MIDI (B-Beat / DAW): nota da música ativa, nota da frase salta direto,
+  // nota geral avança, nota 99 dispara o Aviso Urgente.
+  const midiStatus = document.getElementById("midiStatus");
+  function handleNote(noteNumber) {
+    if (noteNumber === ALERT_MIDI_NOTE) {
+      screen.alertColor = document.getElementById("stAttention").value || "#ffe600";
+      screen.alert = { id: uid(), at: Date.now() };
+      push();
+      return;
+    }
+    const list = getSetlist();
+    const active = findSong(list, screen.activeSongId);
+    const cueIndex = cueIndexByNote(active, noteNumber);
+    if (cueIndex != null) {
+      screen.blockIndex = cueIndex;
+      push();
+      return;
+    }
+    const song = songByNote(list, noteNumber);
+    if (song) { activateSong(song.id); return; }
+    if (active?.lyricMode === "cue" && (active.cueNote == null || active.cueNote === noteNumber)) {
+      screen.blockIndex = clampBlock(active, (Number(screen.blockIndex) || 0) + 1);
+      push();
+    }
+  }
+  if (navigator.requestMIDIAccess) {
+    navigator.requestMIDIAccess().then((access) => {
+      const attach = () => {
+        const inputs = [...access.inputs.values()];
+        midiStatus.textContent = inputs.length
+          ? `MIDI: ${inputs.length} dispositivo(s) — nota 99 = Aviso Urgente.`
+          : "MIDI: nenhum dispositivo — conecte o B-Beat/DAW por USB.";
+        for (const input of inputs) {
+          input.onmidimessage = (event) => {
+            const [status, noteNumber, velocity] = event.data;
+            if ((status & 0xf0) === 0x90 && velocity > 0) handleNote(noteNumber);
+          };
+        }
+      };
+      attach();
+      access.onstatechange = attach;
+    }).catch(() => { midiStatus.textContent = "MIDI: acesso negado pelo navegador."; });
+  } else {
+    midiStatus.textContent = "MIDI: este navegador não tem Web MIDI (use Chrome/Edge no computador).";
+  }
+</script>
+  <footer class="site-footer">Sistema desenvolvido por <strong>Joanderson Andrade</strong></footer>
+<script>
+  (() => {
+    const sala = new URL(location.href).searchParams.get("sala") || localStorage.getItem("hub:sala");
+    if (!sala) return;
+    for (const a of document.querySelectorAll(".appnav a")) a.href += "?sala=" + encodeURIComponent(sala);
+  })();
+</script>
+</body>
+</html>
